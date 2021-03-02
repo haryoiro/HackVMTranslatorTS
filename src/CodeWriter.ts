@@ -1,28 +1,16 @@
 import { createWriteStream, WriteStream } from 'fs';
 import { CommandElement } from './types';
 
-const a = (value:string|number) => `@${value}`
-// const l = (value:string|number) => `(${value})`
-
-// /**
-//  * @param symbol Aレジスタに入力するシンボル @Xxx
-//  * @param cOrder C命令 dest=comp
-//  */
-// const ac = (symbol:string|number,cOrder:string) => `@${symbol}\n${cOrder}\n`
 /**
  * generateVariable
  * @param jump comp;jump のjumpニーモニック
  * @param unique かぶらない変数を宣言するために一意の値を入力
  */
-const genVar = (jump:string, unique:string|number) => {
-  let jif = `${jump}${unique.toString()}`
-  let jelse   = 'N' + jif
-  let jend = jif + 'END'
-
+const genVar = (unique:string|number) => {
   return {
-    if: jif,
-    else: jelse,
-    end: jend,
+    if: `IF${unique}`,
+    el: `EL${unique}`,
+    fi: `FI${unique}`,
   }
 }
 
@@ -30,14 +18,14 @@ export default class CodeWriter {
   _stream: WriteStream
   _fileName?: string = "a"
   _command: CommandElement = { type:undefined, command:[""], arg1:"", arg2:0}
-  sp: SP
+  _uniqueLoopNum = 0
   asm: string[] = []
   constructor(stream: WriteStream) {
     this._stream = stream ? stream : createWriteStream("a","utf-8")
-    this.sp = new SP()
   }
   write(parsed: Array<CommandElement>): void{
     try {
+      this.asm.push(`@256`,`D=A`,`@SP`,`M=D`)
       for (const command of parsed) {
         this._command = command
         switch (command.type) {
@@ -60,82 +48,64 @@ export default class CodeWriter {
     let com = ""
     let jmp = ""
     let sg = false
-    const address = () => this.sp.address()
     switch(command) {
-      case "eq"   :
-        com = `D=D-M`
-        jmp = `JEQ`
-        break
-      case "gt"   :
-        com = `D=M-D`
-        jmp = "JGT"
-        break
-      case "lt"   :
-        com = `D=M-D`
-        jmp = "JLT"
-        break
-      case "add"  :
-        com = `M=D+M`
-        break
-      case "sub"  :
-        com = `M=M-D`
-        break
-      case "neg"  :
-        sg = true
-        com = `M=-M`
-        break
-      case "and"  :
-        com = `M=D&M`
-        break
-      case "or"   :
-        com = `M=D|M`
-        break
-      case "not"  :
-        sg = true
-        com = `M=!M`
-        break
-      default:
-        break
+      case "eq"   : com = `D=M-D`; jmp = `JEQ`; break
+      case "gt"   : com = `D=M-D`; jmp = "JGT"; break
+      case "lt"   : com = `D=M-D`; jmp = "JLT"; break
+      case "add"  : com = `D=D+M`; break
+      case "sub"  : com = `D=M-D`; break
+      case "and"  : com = `D=D&M`; break
+      case "or"   : com = `D=D|M`; break
+      case "neg"  : com = `D=-M` ; sg = true; break
+      case "not"  : com = `D=!M` ; sg = true; break
+      default: break;
     }
-    this.sp.dec()
     if (sg) {
-      this.asm.push('@'+(address()), com)
+      this.asm.push(
+        `  // sum single ${command}`,
+        `  @SP`,
+        `  A=M-1`,
+        `  ${com}`,
+        `  M=D`
+      )
     }
     if (!sg) {
-      this.asm.push('@'+(address()), `D=M`)
-      this.sp.dec()
-      this.asm.push('@'+(address()), com)
-
+      this.asm.push(
+        `  @SP`,
+        `  A=M-1`,
+        `  D=M`,
+        `  A=A-1`,
+        `  ${com}`,
+      )
+    }
+    if (!(sg || jmp)) {
+      this.asm.push(
+        `  M=D`,
+        `  @SP`,
+        `  M=M-1`,
+      )
     }
     if (jmp) {
-      const jump = genVar(jmp, this.sp.address())
-
+      const jump = genVar(this.uniqueNum())
       this.asm.push(
-        '@'+jump.if,
-        `D;${jmp}`,
-        '@'+jump.else,
-        `D;JMP`
-      )
-
-      this.asm.push(
+        `  // jump ${jump.if}`,
+        `  @${jump.if}`,
+        `  D;${jmp}`,
+        `  @${jump.el}`,
+        `  D;JMP`,
         `(${jump.if})`,
-        '@'+address(),
-        `M=-1`,
-        '@'+jump.end,
-        `D;JMP`
+        `  D=-1`,
+        `  @${jump.fi}`,
+        `  D;JMP`,
+        `(${jump.el})`,
+        `  D=0`,
+        `(${jump.fi})`,
+        `  @SP`,
+        `  M=M-1`,
+        `  A=M-1`,
+        `  M=D`,
       )
-
-      this.asm.push(
-        `(${jump.else})`,
-        '@'+address(),
-        `M=0`,
-        '@'+jump.end,
-        `D;JMP`
-      )
-
-      this.asm.push(`(${jump.end})`)
     }
-    this.sp.inc()
 
     this._stream.write(this.asm.join('\n')+'\n')
     this.asm = []
@@ -146,19 +116,23 @@ export default class CodeWriter {
     switch(arg1) {
       case "constant":
         this.asm.push(
-          a(arg2),
-          `D=A`
+          `  // push constant ${arg2}`,
+          `  @${arg2}`,
+          `  D=A`,
         )
         break;
     }
     switch(command) {
       case "push":
         this.asm.push(
-          a(this.sp.address()),
-          `M=D\n`
+          `  @SP`,
+          `  A=M`,
+          `  M=D`,
+          `  @SP`,
+          `  M=M+1`,
+          ``
         )
-        this.sp.inc()
-        break;
+        break
     }
 
 
@@ -166,29 +140,7 @@ export default class CodeWriter {
     this.asm = []
   }
   close(): void {}
-}
-
-
-
-
-class SP {
-  private _reg = {
-    sp: 256,
-  }
-  constructor() {
-
-  }
-  address = (): number => this._reg.sp
-  inc = (): number => {
-    this._reg.sp += 1
-    return this._reg.sp
-  }
-  dec = (): number => {
-    this._reg.sp -= 1
-    return this._reg.sp
-  }
-  static = (address:number|null): number => {
-    if (!address) return 0
-    return address + 16
+  uniqueNum() {
+    return this._uniqueLoopNum += 1
   }
 }
