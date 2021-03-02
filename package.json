@@ -1,10 +1,17 @@
 {
-  "name": "HackVirtualMachineTranslatorTS",
+  "name": "hack-virtual-machine-translator-ts",
   "version": "1.0.0",
   "main": "index.js",
   "repository": "https://github.com/haryoiro/HackVirtualMachineTranslatorTS.git",
   "author": "haryoiro <mizusecocolte@gmail.com>",
   "license": "MIT",
+  "scripts": {
+    "dev": "ts-node ./src/index.ts"
+  },
+  "keywords": [
+    "nand2tetris",
+    "hack"
+  ],
   "devDependencies": {
     "@types/node": "^14.14.31",
     "@types/yargs": "^16.0.0",
