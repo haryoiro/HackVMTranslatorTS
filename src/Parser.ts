@@ -13,9 +13,10 @@ export default class Parser {
     if (!this._file) throw new Error('')
     const current = this._file
       .toString()
-      .split('\r\n')
+      .replace(/\r\n?/g,"\n")
+      .split('\n')
       .map(a => {
-        const commentRemoved = a.includes('//') ? a.slice(0, a.indexOf('//')) : a
+        const commentRemoved = a.includes('//')? a.slice(0, a.indexOf('//')): a
         const splited = commentRemoved.split(' ')
         return splited
       })
@@ -26,16 +27,12 @@ export default class Parser {
 
       if (this.hasMoreCommand()) {
         this.advance()
-        const arg1 = (this.currentType !== "C_RETURN") ? this.arg1() : ""
-        const arg2 = (this.currentType === ("C_PUSH" || "C_POP" || "C_FUNCTION" || "C_CALL")) ? this.arg2() : 0
-
         const newCommand: CommandElement = {
           type: this.currentType,
-          command,
-          arg1,
-          arg2,
+          command:command[0],
+          arg1:this.arg1(),
+          arg2:this.arg2(),
         }
-
         this.commands.push(newCommand)
       }
     }
@@ -91,9 +88,6 @@ export default class Parser {
   }
   arg2(): number {
     const result = parseInt(this.currentCommand[2])
-    if (isNaN(result)) {
-      throw new Error("arg2 is NaN")
-    }
-    return result
+    return !isNaN(result) ? result : 0
   }
 }

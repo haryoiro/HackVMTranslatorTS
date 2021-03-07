@@ -12,7 +12,7 @@ export type CommandType =
 
 export type CommandElement = {
   type:CommandType,
-  command: string[],
+  command: string,
   arg1: string,
   arg2: number,
 }
