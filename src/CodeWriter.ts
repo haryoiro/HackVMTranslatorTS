@@ -108,15 +108,16 @@ export default class CodeWriter {
       for (const command of parsed) {
         this.writeComment(command)
         switch (command.type) {
-          case "C_ARITHMETIC": this.writeArithmetic(command.arg1 ? command.arg1 : "")
+          case "C_ARITHMETIC":
+            this.writeArithmetic(command.arg1 ? command.arg1 : "") ;break
           case "C_PUSH"   :
-          case "C_POP"    : this.writePushPop(command)
-          case "C_LABEL"  : this.writeLabel(command.arg1)
-          case "C_GOTO"   : this.writeGoto(command.arg1)
-          case "C_IF"     : this.writeIf(command.arg1)
-          case "C_CALL"   : this.writeCall(command.arg1, command.arg2)
-          case "C_FUNCTION":this.writeFunction(command.arg1, command.arg2)
-          case "C_RETURN" : this.writeReturn()
+          case "C_POP"    : this.writePushPop(command);break
+          case "C_LABEL"  : this.writeLabel(command.arg1);break
+          case "C_GOTO"   : this.writeGoto(command.arg1);break
+          case "C_IF"     : this.writeIf(command.arg1);break
+          case "C_CALL"   : this.writeCall(command.arg1, command.arg2);break
+          case "C_FUNCTION":this.writeFunction(command.arg1, command.arg2);break
+          case "C_RETURN" : this.writeReturn();break
         }
       }
 
@@ -294,12 +295,27 @@ export default class CodeWriter {
   }
 
   writeInit():void {}
-  writeLabel(label: string) :void{}
-  writeGoto(label:string):void{}
-  writeIf(label:string):void{}
+  writeLabel(label: string) :void {
+    this.writeCode([`(${label})`])
+  }
+  writeGoto(label:string):void{
+    this.writeCode([
+      `@${label}`,
+      `D;JMP`,
+    ])
+  }
+  writeIf(label:string):void{
+    this.writeCode([
+      pop,
+      `@${label}`,
+      `D;JNE`,
+    ])
+  }
   writeCall(functionName:string,numArgs:number):void{}
-  writeReturn():void {}
+  // 1
   writeFunction(functionName:string,numLocals:number):void{}
+  // 2
+  writeReturn():void {}
 
   writeComment(commands: CommandElement | string): void {
     if (!commands) return
