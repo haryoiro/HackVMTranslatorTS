@@ -89,6 +89,11 @@ export default class CodeWriter {
     return this._stream
   }
 
+  writeCode(asm: Array<string[] | string >) {
+    if (!asm) return
+    this.stream().write(asm.flat().join('\n')+'\n')
+  }
+
   write(parsed: Array<CommandElement>): void{
     try {
       this.writeComment("initialize")
@@ -103,17 +108,15 @@ export default class CodeWriter {
       for (const command of parsed) {
         this.writeComment(command)
         switch (command.type) {
-          case "C_ARITHMETIC":
-            this.writeArithmetic(command.arg1 ? command.arg1 : "")
+          case "C_ARITHMETIC": this.writeArithmetic(command.arg1 ? command.arg1 : "")
           case "C_PUSH"   :
-          case "C_POP"    :
-            this.writePushPop(command)
-          case "C_LABEL"  :
-          case "C_GOTO"   :
-          case "C_IF"     :
-          case "C_FUNCTION" :
-          case "C_RETURN" :
-          case "C_CALL"   :
+          case "C_POP"    : this.writePushPop(command)
+          case "C_LABEL"  : this.writeLabel(command.arg1)
+          case "C_GOTO"   : this.writeGoto(command.arg1)
+          case "C_IF"     : this.writeIf(command.arg1)
+          case "C_CALL"   : this.writeCall(command.arg1, command.arg2)
+          case "C_FUNCTION":this.writeFunction(command.arg1, command.arg2)
+          case "C_RETURN" : this.writeReturn()
         }
       }
 
@@ -192,21 +195,19 @@ export default class CodeWriter {
     }
   }
 
-  // command segment index
-  //   *       *       *-* arg2
-  //   |       *---------* arg1
-  //   *-----------------* command
   writePushPop(commands: CommandElement): void {
+
+    // command segment index
+    //   *       *       *-* arg2
+    //   |       *---------* arg1
+    //   *-----------------* command
 
     const { arg1, arg2, command } = commands
 
     switch(command) {
-      case "push":
-        this.writePush(arg1, arg2)
+      case "push": this.writePush(arg1, arg2)
         break
-
-      case "pop":
-        this.writePop(arg1, arg2)
+      case "pop" : this.writePop(arg1, arg2)
         break
     }
   }
@@ -220,8 +221,7 @@ export default class CodeWriter {
     if (segment === "constant") {
       this.writeCode([
         pop,
-        `@${arg2}`,
-        `D=A`
+        setD(arg2),
       ])
     }
     // ex:
@@ -293,16 +293,13 @@ export default class CodeWriter {
     }
   }
 
-  close(): void {
-
-    // infinite loop
-    this.writeCode([
-      `(END)`,
-      `@END`,
-      `0;JMP`
-    ])
-    this.stream().end()
-  }
+  writeInit():void {}
+  writeLabel(label: string) :void{}
+  writeGoto(label:string):void{}
+  writeIf(label:string):void{}
+  writeCall(functionName:string,numArgs:number):void{}
+  writeReturn():void {}
+  writeFunction(functionName:string,numLocals:number):void{}
 
   writeComment(commands: CommandElement | string): void {
     if (!commands) return
@@ -331,8 +328,13 @@ export default class CodeWriter {
     return
   }
 
-  writeCode(asm: Array<string[] | string >) {
-    if (!asm) return
-    this.stream().write(asm.flat().join('\n')+'\n')
+  close(): void {
+    // infinite loop
+    this.writeCode([
+      `(END)`,
+      `@END`,
+      `0;JMP`
+    ])
+    this.stream().end()
   }
 }
