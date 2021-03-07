@@ -4,19 +4,16 @@ import { CommandElement } from './types';
 /**
  * generateVariable
  * @param jump comp;jump のjumpニーモニック
- * @param unique かぶらない変数を宣言するために一意の値を入力
+ * @param uniqueId 一意の値を入力
  */
-const genVar = (unique:string|number) => {
-  return {
-    jif: `JIF${unique}`,
-    jel: `JEL${unique}`,
-    jfi: `JFI${unique}`,
-  }
-}
+const genVar = (unique:string|number) => ({
+  jif: `JIF${unique}`,
+  jel: `JEL${unique}`,
+  jfi: `JFI${unique}`,
+})
 
 let symbolId = 0
 const genSymbolId = () => symbolId += 1
-
 
 const SYMBOL: {
   [key:string]: { 0: string, offset: number }
@@ -26,10 +23,11 @@ const SYMBOL: {
   argument: { 0: "ARG",   offset: 400  },
   this:     { 0: "THIS",  offset: 3000 },
   that:     { 0: "THAT",  offset: 3010 },
+  pointer:  { 0: "",      offset: 3    },
   temp:     { 0: "",      offset: 5    },
 })
 
-const { push, pop } = Object.freeze({
+const { push, pop, setD } = Object.freeze({
   push:[
     `@SP`,
     `A=M`,
@@ -51,19 +49,19 @@ const { push, pop } = Object.freeze({
 
 const init = {
   stackPointer:  [
-    `@${SYMBOL.stack.offset}`,`D=A`,`@${SYMBOL.stack[0]}`,`M=D`,
+    setD(SYMBOL.stack.offset),    `@${SYMBOL.stack[0]}`,`M=D`,
   ],
   localBase: [
-    `@${SYMBOL.local.offset}`,`D=A`,`@${SYMBOL.local[0]}`,`M=D`,
+    setD(SYMBOL.local.offset),    `@${SYMBOL.local[0]}`,`M=D`,
   ],
   argumentsBase: [
-    `@${SYMBOL.argument.offset}`,`D=A`,`@${SYMBOL.argument[0]}`,`M=D`
+    setD(SYMBOL.argument.offset), `@${SYMBOL.argument[0]}`,`M=D`
   ],
   thisBase: [
-    `@${SYMBOL.this.offset}`,`D=A`,`@${SYMBOL.this[0]}`,`M=D`
+    setD(SYMBOL.this.offset),     `@${SYMBOL.this[0]}`,`M=D`
   ],
   thatBase: [
-    `@${SYMBOL.that.offset}`,`D=A`,`@${SYMBOL.that[0]}`,`M=D`,
+    setD(SYMBOL.that.offset),     `@${SYMBOL.that[0]}`,`M=D`,
   ],
 }
 
@@ -113,9 +111,7 @@ export default class CodeWriter {
   }
 
   writeArithmetic(command: string): void {
-    let com = ""
-    let jmp = ""
-    let sg = false
+    let { com, jmp, single } = { com: "", jmp: "", single: false }
 
     switch(command) {
       case "eq" : com = `D=M-D`; jmp = `JEQ`; break
@@ -125,12 +121,12 @@ export default class CodeWriter {
       case "sub": com = `M=M-D`; break
       case "and": com = `M=D&M`; break
       case "or" : com = `M=D|M`; break
-      case "neg": com = `D=-M` ; sg = true; break
-      case "not": com = `D=!M` ; sg = true; break
+      case "neg": com = `D=-M` ; single = true; break
+      case "not": com = `D=!M` ; single = true; break
       default: break
     }
 
-    if (sg) {
+    if (single) {
       this.writeCode([
         `@SP`,
         `A=M-1`,
@@ -138,7 +134,7 @@ export default class CodeWriter {
         `M=D`,
       ])
     }
-    if (!sg) {
+    if (!single) {
       this.writeCode([
         `@SP`,
         `M=M-1`,
@@ -150,7 +146,7 @@ export default class CodeWriter {
         `${com}`,
       ])
     }
-    if (!(sg || jmp)) {
+    if (!(single || jmp)) {
       this.writeCode([
         `@SP`,
         `M=M+1`
@@ -199,23 +195,22 @@ export default class CodeWriter {
     let asm:string[]|null= []
 
     if (segment === "constant") {
-      asm = [
-        ...pop,
+      this.writeCode([
+        pop,
         `@${arg2}`,
         `D=A`
-      ]
+      ])
     }
-    else if (["static", "temp"].includes(segment)) {
-      asm = [
-        ...pop,
+    else if (["static", "temp", "pointer"].includes(segment)) {
+      this.writeCode([
+        pop,
         `@${SYMBOL[segment].offset + arg2}`,
         `M=D`
-      ]
+      ])
     }
     else if (["local", "argument", "this", "that" ].includes(segment)) {
-      asm = [
-        `@${arg2}`,
-        `D=A`,
+      this.writeCode([
+        setD(arg2),
         `@${SYMBOL[segment][0]}`,
         `D=M+D`,
         `@${R_ADDRESS}`,
@@ -227,7 +222,7 @@ export default class CodeWriter {
         `@${R_ADDRESS}`,
         `A=M`,
         `M=D`,
-      ]
+      ])
     }
 
     this.writeCode(asm)
@@ -236,35 +231,28 @@ export default class CodeWriter {
   writePush(segment:string,arg2:number): void {
     if (segment === "constant") {
       this.writeCode([
-        `@${arg2}`,
-        `D=A`,
-        `@SP`,
-        `A=M`,
-        `M=D`,
-        `@SP`,
-        `M=M+1`
+        setD(arg2),
+        push,
       ])
     }
-    else if (["static", "temp"].includes(segment)) {
+    else if (["static", "temp", "pointer"].includes(segment)) {
       this.writeCode([
         `@${SYMBOL[segment].offset + arg2}`,
         `D=M`,
         push,
       ])
     }
+    else if (["pointer"].includes(segment)) {
+
+    }
     else if (["local", "argument", "this", "that" ].includes(segment)) {
       this.writeCode([
-        `@${arg2}`,
-        `D=A`,  // D = 2
+        setD(arg2),
         `@${SYMBOL[segment][0]}`, // 400
         `A=M`,  // A = (400) M[2]
         `A=D+A`,// A = 2 + 400
         `D=M`,  // D = M[402]
-        `@SP`,  // 0
-        `A=M`,// A = M[0]-1
-        `M=D`,  // M[A] = D
-        `@SP`,  // 0
-        `M=M+1` // 
+        push,
       ])
     }
   }
