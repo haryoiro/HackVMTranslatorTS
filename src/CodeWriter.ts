@@ -25,6 +25,7 @@ const SYMBOL: {
   that:     { 0: "THAT",  offset: 3010 },
   pointer:  { 0: "",      offset: 3    },
   temp:     { 0: "",      offset: 5    },
+  static:   { 0: "",      offset: 16   },
 })
 
 const { push, pop, setD } = Object.freeze({
@@ -201,7 +202,7 @@ export default class CodeWriter {
         `D=A`
       ])
     }
-    else if (["static", "temp", "pointer"].includes(segment)) {
+    else if (["static" , "temp", "pointer"].includes(segment)) {
       this.writeCode([
         pop,
         `@${SYMBOL[segment].offset + arg2}`,
@@ -242,9 +243,6 @@ export default class CodeWriter {
         push,
       ])
     }
-    else if (["pointer"].includes(segment)) {
-
-    }
     else if (["local", "argument", "this", "that" ].includes(segment)) {
       this.writeCode([
         setD(arg2),
@@ -258,6 +256,7 @@ export default class CodeWriter {
   }
 
   close(): void {
+    this.writeCode([`0;JMP`])
     this.stream().end()
   }
 
