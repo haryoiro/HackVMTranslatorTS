@@ -49,34 +49,25 @@ export default class Parser {
   commandType(): CommandType {
     const command: string = this.currentCommand[0]
     switch (command) {
-      case "push"   :
-        return "C_PUSH"
-      case "pop"    :
-        return "C_POP"
-      case "label"  :
-        return "C_LABEL"
-      case "goto"   :
-        return "C_GOTO"
-      case "if-goto":
-        return "C_IF"
-      case "function":
-        return "C_FUNCTION"
-      case "return" :
-        return "C_RETURN"
-      case "call"   :
-        return "C_CALL"
-      case "add"    :
-      case "sub"    :
-      case "neg"    :
-      case "eq"     :
-      case "gt"     :
-      case "lt"     :
-      case "and"    :
-      case "or"     :
-      case "not"    :
-        return "C_ARITHMETIC"
-      default:
-        return
+      case "push"     : return "C_PUSH"
+      case "pop"      : return "C_POP"
+      case "label"    : return "C_LABEL"
+      case "goto"     : return "C_GOTO"
+      case "if-goto"  : return "C_IF"
+      case "function" : return "C_FUNCTION"
+      case "return"   : return "C_RETURN"
+      case "call"     : return "C_CALL"
+      // --- ARITHMETIC ---
+      case "add"      :
+      case "sub"      :
+      case "neg"      :
+      case "eq"       :
+      case "gt"       :
+      case "lt"       :
+      case "and"      :
+      case "or"       :
+      case "not"      : return "C_ARITHMETIC"
+      default         : return
     }
 
   }
