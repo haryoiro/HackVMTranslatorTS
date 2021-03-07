@@ -50,19 +50,29 @@ const { push, pop, setD } = Object.freeze({
 
 const init = {
   stackPointer:  [
-    setD(SYMBOL.stack.offset),    `@${SYMBOL.stack[0]}`,`M=D`,
+    setD(SYMBOL.stack.offset),
+    `@${SYMBOL.stack[0]}`,
+    `M=D`,
   ],
   localBase: [
-    setD(SYMBOL.local.offset),    `@${SYMBOL.local[0]}`,`M=D`,
+    setD(SYMBOL.local.offset),
+    `@${SYMBOL.local[0]}`,
+    `M=D`,
   ],
   argumentsBase: [
-    setD(SYMBOL.argument.offset), `@${SYMBOL.argument[0]}`,`M=D`
+    setD(SYMBOL.argument.offset),
+    `@${SYMBOL.argument[0]}`,
+    `M=D`,
   ],
   thisBase: [
-    setD(SYMBOL.this.offset),     `@${SYMBOL.this[0]}`,`M=D`
+    setD(SYMBOL.this.offset),
+    `@${SYMBOL.this[0]}`,
+    `M=D`,
   ],
   thatBase: [
-    setD(SYMBOL.that.offset),     `@${SYMBOL.that[0]}`,`M=D`,
+    setD(SYMBOL.that.offset),
+    `@${SYMBOL.that[0]}`,
+    `M=D`,
   ],
 }
 
@@ -95,9 +105,15 @@ export default class CodeWriter {
         switch (command.type) {
           case "C_ARITHMETIC":
             this.writeArithmetic(command.arg1 ? command.arg1 : "")
-          case "C_PUSH":
-          case "C_POP":
+          case "C_PUSH"   :
+          case "C_POP"    :
             this.writePushPop(command)
+          case "C_LABEL"  :
+          case "C_GOTO"   :
+          case "C_IF"     :
+          case "C_FUNCTION" :
+          case "C_RETURN" :
+          case "C_CALL"   :
         }
       }
 
@@ -154,7 +170,7 @@ export default class CodeWriter {
       ])
     }
     if (jmp) {
-      const { jif, jel, jfi } = genVar(genSymbolId())
+      const { jif, jel, jfi } = genVar( genSymbolId() )
 
       this.writeCode([
         `@${jif}`,
@@ -176,7 +192,12 @@ export default class CodeWriter {
     }
   }
 
+  // command segment index
+  //   *       *       *-* arg2
+  //   |       *---------* arg1
+  //   *-----------------* command
   writePushPop(commands: CommandElement): void {
+
     const { arg1, arg2, command } = commands
 
     switch(command) {
@@ -193,8 +214,9 @@ export default class CodeWriter {
   writePop(segment:string,arg2:number): void {
     const { R_ADDRESS } = Object.freeze({ R_ADDRESS: "R13" })
 
-    let asm:string[]|null= []
-
+    // ex:
+    //  pop constant index
+    //  > RAM[index] = RAM[SP]
     if (segment === "constant") {
       this.writeCode([
         pop,
@@ -202,6 +224,9 @@ export default class CodeWriter {
         `D=A`
       ])
     }
+    // ex:
+    //  pop segment index
+    //  > RAM[SYMBOL + index] = RAM[SP]
     else if (["static" , "temp", "pointer"].includes(segment)) {
       this.writeCode([
         pop,
@@ -209,6 +234,11 @@ export default class CodeWriter {
         `M=D`
       ])
     }
+    // ex:
+    //  pop segment index
+    //  > R13    = RAM[SYMBOL] + index
+    //  > RAM[R13] = RAM[SP]
+    // // R13 === RAM[13]
     else if (["local", "argument", "this", "that" ].includes(segment)) {
       this.writeCode([
         setD(arg2),
@@ -226,16 +256,21 @@ export default class CodeWriter {
       ])
     }
 
-    this.writeCode(asm)
   }
 
   writePush(segment:string,arg2:number): void {
+    // ex:
+    //  push constant 10
+    //  > RAM[SP] = 10
     if (segment === "constant") {
       this.writeCode([
         setD(arg2),
         push,
       ])
     }
+    // ex:
+    //  push segment index
+    //  > RAM[SP] = RAM[ RAM[SYMBOL] + index ]
     else if (["static", "temp", "pointer"].includes(segment)) {
       this.writeCode([
         `@${SYMBOL[segment].offset + arg2}`,
@@ -243,41 +278,57 @@ export default class CodeWriter {
         push,
       ])
     }
+    // ex:
+    //  push segment index
+    //  > RAM[SP] = RAM[ RAM[SYMBOL] + index ]
     else if (["local", "argument", "this", "that" ].includes(segment)) {
       this.writeCode([
         setD(arg2),
-        `@${SYMBOL[segment][0]}`, // 400
-        `A=M`,  // A = (400) M[2]
-        `A=D+A`,// A = 2 + 400
-        `D=M`,  // D = M[402]
+        `@${SYMBOL[segment][0]}`,
+        `A=M`,
+        `A=D+A`,
+        `D=M`,
         push,
       ])
     }
   }
 
   close(): void {
-    this.writeCode([`0;JMP`])
+
+    // infinite loop
+    this.writeCode([
+      `(END)`,
+      `@END`,
+      `0;JMP`
+    ])
     this.stream().end()
   }
 
   writeComment(commands: CommandElement | string): void {
     if (!commands) return
-    else if (typeof commands === "string") {
-      this.stream().write(`\n// ${commands}\n`)
-    }
-    else {
-      const { command, arg1, arg2 } = commands
 
-      if (command === arg1 || arg1 === '' || !arg1) {
-        this.stream().write(`\n// ${command}\n`)
-        return
-      }
-      if (arg1 && arg2) {
-        this.stream().write(`\n// ${command} ${arg1} ${arg2}\n`)
-        return
-      }
-      this.stream().write(`\n// ${command} ${arg1} ${arg2}\n`)
+    // commandが文字列なら直接コメントを出力
+    else if (typeof commands === "string") {
+      this.writeCode([`// ${commands}`])
+      return
     }
+
+    // commandを要素ごとに分解
+    const { command, arg1, arg2 } = commands
+
+
+    // arg1が空白、または算術
+    if (command === arg1 || arg1 === '' || !arg1) {
+      this.writeCode([`// ${command}`])
+      return
+    }
+
+    else if (arg1 && arg2) {
+      this.writeCode([`// ${command} ${arg1} ${arg2}`])
+      return
+    }
+
+    return
   }
 
   writeCode(asm: Array<string[] | string >) {
