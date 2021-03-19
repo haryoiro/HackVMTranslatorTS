@@ -15,6 +15,7 @@ export type CommandElement = {
   command: string,
   arg1: string,
   arg2: number,
+  functionName?: string
 }
 
 
