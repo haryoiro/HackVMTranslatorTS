@@ -14,6 +14,14 @@ const genVar = (unique:string|number) => ({
 
 let symbolId = 0
 const genSymbolId = () => symbolId += 1
+const genReturnLabel = (() => {
+  let labels:{[key: string]:number} = {};
+  return (functionName: string) => {
+    labels[functionName] = (labels[functionName]||0) + 1;
+    return `${functionName}$ret.${labels[functionName]}`
+  }
+})();
+
 
 const SYMBOL: {
   [key:string]: { 0: string, offset: number }
@@ -36,49 +44,23 @@ const { push, pop, setD } = Object.freeze({
     `@SP`,
     `M=M+1`
   ],
-  pop:[
-    `@SP`,
-    `M=M-1`,
-    `A=M`,
-    `D=M`,
+  pop: ({setD = true} = {}) => [
+    '@SP',
+    'M=M-1',
+    'A=M',
+    ...(setD ? ['D=M'] : []),
   ],
-  setD:((d: string | number) => [
+
+  setD:((d: string | number): string[] => [
     `@${d}`,
     `D=A`
-  ])
+  ]),
 })
-
-const init = {
-  stackPointer:  [
-    setD(SYMBOL.stack.offset),
-    `@${SYMBOL.stack[0]}`,
-    `M=D`,
-  ],
-  localBase: [
-    setD(SYMBOL.local.offset),
-    `@${SYMBOL.local[0]}`,
-    `M=D`,
-  ],
-  argumentsBase: [
-    setD(SYMBOL.argument.offset),
-    `@${SYMBOL.argument[0]}`,
-    `M=D`,
-  ],
-  thisBase: [
-    setD(SYMBOL.this.offset),
-    `@${SYMBOL.this[0]}`,
-    `M=D`,
-  ],
-  thatBase: [
-    setD(SYMBOL.that.offset),
-    `@${SYMBOL.that[0]}`,
-    `M=D`,
-  ],
-}
 
 export default class CodeWriter {
   _stream?: WriteStream
   _fileName?: string
+  functionName:string=""
 
   constructor(stream: WriteStream) {
     this._stream = stream
@@ -96,14 +78,7 @@ export default class CodeWriter {
 
   write(parsed: Array<CommandElement>): void{
     try {
-      this.writeComment("initialize")
-      this.writeCode([
-        ...init.stackPointer,
-        ...init.localBase,
-        ...init.argumentsBase,
-        ...init.thisBase,
-        ...init.thatBase,
-      ])
+      this.writeInit()
 
       for (const command of parsed) {
         this.writeComment(command)
@@ -127,8 +102,21 @@ export default class CodeWriter {
     }
   }
 
+  close(): void {
+    // infinite loop
+    this.writeCode([
+      `(END)`,
+      `@END`,
+      `0;JMP`
+    ])
+    this.stream().end()
+    console.log('Stream was closed...')
+  }
+
   setFileName(fileName: string) {
     this._fileName = fileName
+    this.functionName = fileName.slice(0, -4)
+    return this
   }
 
   writeArithmetic(command: string): void {
@@ -157,13 +145,8 @@ export default class CodeWriter {
     }
     if (!single) {
       this.writeCode([
-        `@SP`,
-        `M=M-1`,
-        `A=M`,
-        `D=M`,
-        `@SP`,
-        `M=M-1`,
-        `A=M`,
+        pop(),
+        pop({setD:false}),
         `${com}`,
       ])
     }
@@ -221,7 +204,7 @@ export default class CodeWriter {
     //  > RAM[index] = RAM[SP]
     if (segment === "constant") {
       this.writeCode([
-        pop,
+        pop(),
         setD(arg2),
       ])
     }
@@ -230,7 +213,7 @@ export default class CodeWriter {
     //  > RAM[SYMBOL + index] = RAM[SP]
     else if (["static" , "temp", "pointer"].includes(segment)) {
       this.writeCode([
-        pop,
+        pop(),
         `@${SYMBOL[segment].offset + arg2}`,
         `M=D`
       ])
@@ -260,18 +243,13 @@ export default class CodeWriter {
   }
 
   writePush(segment:string,arg2:number): void {
-    // ex:
-    //  push constant 10
-    //  > RAM[SP] = 10
     if (segment === "constant") {
       this.writeCode([
         setD(arg2),
         push,
       ])
     }
-    // ex:
-    //  push segment index
-    //  > RAM[SP] = RAM[ RAM[SYMBOL] + index ]
+
     else if (["static", "temp", "pointer"].includes(segment)) {
       this.writeCode([
         `@${SYMBOL[segment].offset + arg2}`,
@@ -279,9 +257,7 @@ export default class CodeWriter {
         push,
       ])
     }
-    // ex:
-    //  push segment index
-    //  > RAM[SP] = RAM[ RAM[SYMBOL] + index ]
+
     else if (["local", "argument", "this", "that" ].includes(segment)) {
       this.writeCode([
         setD(arg2),
@@ -294,29 +270,146 @@ export default class CodeWriter {
     }
   }
 
-  writeInit():void {}
-  writeLabel(label: string) :void {
-    this.writeCode([`(${label})`])
+  // BootStrap Code
+  // Initialize StackPointer
+  //   and Call Sys.init
+  writeInit(): void {
+    this.writeComment("BootStrap")
+    this.writeCode([
+      setD(SYMBOL.stack.offset),
+      `@${SYMBOL.stack[0]}`,
+      `M=D`,
+    ])
+    this.writeCall("Sys.init", 0)
   }
+
+  // label xxx
+  writeLabel(label: string) :void {
+    this.writeCode([
+      `(${this.functionName}$${label})`
+    ])
+  }
+
+  // goto xxx
   writeGoto(label:string):void{
     this.writeCode([
-      `@${label}`,
-      `D;JMP`,
+      `@${this.functionName}$${label}`,
+      `0;JMP`,
     ])
   }
+
+  // if-goto xxx
   writeIf(label:string):void{
     this.writeCode([
-      pop,
-      `@${label}`,
-      `D;JNE`,
+      `@SP`,
+      `M=M-1`,
+      `A=M`,
+      `D=M`,
+      `@${this.functionName}$${label}`,
+      `D;JNE`
     ])
   }
-  writeCall(functionName:string,numArgs:number):void{}
-  // 1
-  writeFunction(functionName:string,numLocals:number):void{}
-  // 2
-  writeReturn():void {}
 
+  writeCall(functionName: string,numArgs: number): void {
+    const RETURN_LABEL = genReturnLabel(functionName)
+
+    this.writeCode([
+      `@${RETURN_LABEL}`,
+      `D=A`,
+      push,
+      `@LCL`,
+      `D=M`,
+      push,
+      `@ARG`,
+      `D=M`,
+      push,
+      `@THIS`,
+      `D=M`,
+      push,
+      `@THAT`,
+      `D=M`,
+      push,
+      `@SP`,
+      `D=M`,
+      `@${numArgs + 5}`,
+      `D=A`,
+      `@SP`,
+      `D=M-D`,
+      `@ARG`,
+      `M=D`,
+      `@SP`,
+      `D=M`,
+      `@LCL`,
+      `M=D`,
+      `@${functionName}`,
+      `D;JMP`,
+      `(${RETURN_LABEL})`
+    ])
+  }
+
+  /**
+   * function f n
+
+   * (f)
+   *    repeat n times:
+   *    push 0
+
+   */
+  writeFunction(functionName: string, numLocals: number): void {
+    this.writeCode([`(${functionName})`])
+
+    if (numLocals > 0) {
+      for(let i = 0;i < numLocals;i++) {
+        this.writeCode([
+            setD(0),
+            push,
+        ])
+      }
+    }
+  }
+
+  writeReturn(): void {
+    const { FRAME, RET } = Object.freeze({
+      FRAME : "R13",
+      RET   : "R14",
+    })
+
+    let { setVarFromFrame } = {
+      setVarFromFrame: (target:string, offset:number) => [
+        `@${FRAME}`,
+        'D=M',
+        `@${offset}`,
+        'A=D-A',
+        'D=M',
+        `@${target}`,
+        'M=D',
+      ],
+    }
+
+
+    this.writeCode([
+      '@LCL',
+      'D=M',
+      `@${FRAME}`,
+      'M=D',
+      setVarFromFrame(RET, 5),
+      pop(),
+      '@ARG',
+      'A=M',
+      'M=D',
+      '@ARG',
+      'D=M+1',
+      '@SP',
+      'M=D',
+      setVarFromFrame('THAT', 1),
+      setVarFromFrame('THIS', 2),
+      setVarFromFrame('ARG', 3),
+      setVarFromFrame('LCL', 4),
+      `@${RET}`,
+      'A=M',
+      '0;JMP',
+    ])
+  }
   writeComment(commands: CommandElement | string): void {
     if (!commands) return
 
@@ -331,26 +424,18 @@ export default class CodeWriter {
 
 
     // arg1が空白、または算術
-    if (command === arg1 || arg1 === '' || !arg1) {
+    if (command === arg1 || !arg1) {
       this.writeCode([`// ${command}`])
       return
     }
-
     else if (arg1 && arg2) {
       this.writeCode([`// ${command} ${arg1} ${arg2}`])
       return
     }
+    else if (arg1) {
+      this.writeCode([`// ${command} ${arg1}`])
+    }
 
     return
-  }
-
-  close(): void {
-    // infinite loop
-    this.writeCode([
-      `(END)`,
-      `@END`,
-      `0;JMP`
-    ])
-    this.stream().end()
   }
 }
