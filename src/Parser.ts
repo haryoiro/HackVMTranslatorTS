@@ -4,14 +4,25 @@ export default class Parser {
   commands: Array<CommandElement> = []
   currentCommand: string[] = []
   currentType?: CommandType
-  _file?: string | Buffer
+  _file: string | Buffer = ""
+  functionName: string = ""
 
   constructor(file: string | Buffer) {
+    this.setFile(file)
+  }
+  setFile(file: string | Buffer | undefined) {
+    if (!file) {throw new Error('')}
     this._file = file
   }
+  setFileName(fileName: string) {
+    this.functionName = fileName
+    return this
+  }
+  getFile() {
+    return this._file
+  }
   parse() {
-    if (!this._file) throw new Error('')
-    const current = this._file
+    const current = this.getFile()
       .toString()
       .replace(/\r\n?/g,"\n")
       .split('\n')
@@ -32,6 +43,7 @@ export default class Parser {
           command:command[0],
           arg1:this.arg1(),
           arg2:this.arg2(),
+          functionName: this.functionName
         }
         this.commands.push(newCommand)
       }
