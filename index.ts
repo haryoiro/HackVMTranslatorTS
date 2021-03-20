@@ -38,10 +38,18 @@ async function main() {
     // ディレクトリ内のファイル一覧から重複したパスを削除
     const uniqchildPathList = [...new Set(childPathList)]
 
-    // ストリームに渡すためのパス文字列
+    // 書き込みに使用するファイル名
     const writableFileName = (() => {
       if (currentStats.isDirectory()) {
-        const currentDirectoryName = targetPath.split('/').splice(-1)[0]
+        let currentPath = targetPath
+        // パスの末尾が`/`だった場合取り除く
+        if ( targetPath.endsWith('/') ) {
+          currentPath = targetPath.slice(0, -1)
+        }
+
+        // パスの最後尾にあるディレクトリ名のみ残し、それを出力ファイル名とする
+        const currentDirectoryName = currentPath.split('/').splice(-1)[0]
+
         return `${targetPath}/${currentDirectoryName}.asm`
       }
       return targetPath.replace('.vm', '.asm')
